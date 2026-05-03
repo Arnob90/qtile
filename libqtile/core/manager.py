@@ -84,6 +84,7 @@ class Qtile(CommandObject):
         state: str | None = None,
         socket_path: str | None = None,
     ) -> None:
+        print("Hacking qtile: success")
         self.core: base.Core = kore
         self.config = config
         self.no_spawn = no_spawn
