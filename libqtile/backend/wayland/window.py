@@ -1,7 +1,8 @@
 from __future__ import annotations
-
+import asyncio
+from time import sleep
 import typing
-
+from . import animate
 import libqtile.backend.base.window as base
 from libqtile import hook, utils
 from libqtile.backend.base import FloatStates
@@ -43,6 +44,9 @@ class Base(base._Window):
         self.defunct = False
         self.group: _Group | None = None
         self.core: Core = typing.cast("Core", qtile.core)
+        self.animation_manager: animate.AnimationManager = animate.AnimationManager(
+            self.qtile, self._wid
+        )
 
     def _grab_click(self) -> None:
         lib.qw_view_grab_click(self._ptr)
@@ -174,6 +178,7 @@ class Base(base._Window):
         # Adjust the placement to account for layout margins, if there are any.
         # TODO: is respect_hints only for X11?
         assert ffi is not None
+        is_app = self.group is not None
         if x is None:
             x = self.x
         if y is None:
@@ -215,6 +220,7 @@ class Base(base._Window):
 
             # Allocate array of qw_border
             c_layers = ffi.new(f"struct qw_border[{n}]")
+            self._c_layers_mem = c_layers
 
             base_width = borderwidth // n
             remainder = borderwidth % n
@@ -237,6 +243,14 @@ class Base(base._Window):
 
         self.bordercolor = bordercolor
         self.borderwidth = borderwidth
+        if is_app:
+            self.animation_manager.animate_to_position(
+                animate.Vector(x, y),
+                self._ptr,
+                0.5,
+                animate.OtherInfo(width, height, c_layers, n, int(above)),
+            )
+            return
         self._ptr.place(self._ptr, x, y, width, height, c_layers, n, int(above))
 
     @expose_command()
