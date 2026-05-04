@@ -44,9 +44,7 @@ class Base(base._Window):
         self.defunct = False
         self.group: _Group | None = None
         self.core: Core = typing.cast("Core", qtile.core)
-        self.animation_manager: animate.AnimationManager = animate.AnimationManager(
-            self.qtile, self._wid
-        )
+        self._anim_ticket: int | None = None
 
     def _grab_click(self) -> None:
         lib.qw_view_grab_click(self._ptr)
@@ -244,10 +242,11 @@ class Base(base._Window):
         self.bordercolor = bordercolor
         self.borderwidth = borderwidth
         if is_app:
-            self.animation_manager.animate_to_position(
+            animate.AnimationManager.animate_to_position(
+                self.qtile,
+                self,
                 animate.Vector(x, y),
-                self._ptr,
-                0.5,
+                1,
                 animate.OtherInfo(width, height, c_layers, n, int(above)),
             )
             return
