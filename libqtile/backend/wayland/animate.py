@@ -6,18 +6,15 @@ except ModuleNotFoundError:
     # Continue if ffi not built, so that docs can be built without wayland deps.
     # Provide a stub for FFI to keep going
     from libqtile.backend.wayland.ffi_stub import ffi, lib
-
-from time import sleep
-from dataclasses import dataclass
 import time
 import typing
-import asyncio
-from typing import Callable, Protocol
-import uuid
+from dataclasses import dataclass
+from typing import Protocol
 
 from libqtile.core.manager import Qtile
 
 if typing.TYPE_CHECKING:
+    # No idea why it's in window.py but it must be important in the future lol
     from libqtile.backend.wayland.core import Core
 
 
@@ -35,6 +32,7 @@ def clamp(n: float, minn: float, maxn: float) -> float:
     return max(min(maxn, n), minn)
 
 
+# Using lerp for POC. Will use expo after a bit of experimentation
 def ease_out_expo(t: float) -> float:
     if t == 1.0:
         return 1.0
@@ -81,6 +79,7 @@ class AnimationManager:
             AnimationManager._win_id_to_active_animation_task_cancel[self._wind_id] = False
             # Wait 0.07 seconds to be safe
             # We must not start the animation before the previous one is stopped
+            # Lest we segfault
             self.qtile.call_later(
                 0.017, self.animate_to_position, to, ptr, time_to_finish, other_info
             )
