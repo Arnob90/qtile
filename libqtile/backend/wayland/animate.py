@@ -120,5 +120,3 @@ class AnimationManager:
             qtile.call_later(0.016, tick)
 
         tick()
-        print(f"DEBUG VERSION 7: {0.5}")
-        lib.qw_view_set_opacity(win._ptr, 0.5)
