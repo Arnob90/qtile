@@ -2,6 +2,8 @@ from __future__ import annotations
 import asyncio
 from time import sleep
 import typing
+
+from libqtile.backend.wayland.animate import AnimationManager
 from . import animate
 import libqtile.backend.base.window as base
 from libqtile import hook, utils
@@ -44,7 +46,10 @@ class Base(base._Window):
         self.defunct = False
         self.group: _Group | None = None
         self.core: Core = typing.cast("Core", qtile.core)
+        self.animation_manager = AnimationManager()
         self._anim_ticket: int | None = None
+        self._opacity = 1.0
+        self._ptr.opacity = self._opacity
 
     def _grab_click(self) -> None:
         lib.qw_view_grab_click(self._ptr)
@@ -242,7 +247,7 @@ class Base(base._Window):
         self.bordercolor = bordercolor
         self.borderwidth = borderwidth
         if is_app:
-            animate.AnimationManager.animate_to_position(
+            self.animation_manager.animate_to_position(
                 self.qtile,
                 self,
                 animate.Vector(x, y),
@@ -419,13 +424,16 @@ class Window(Base, base.Window):
                 return True
         return False
 
-    @base._Window.opacity.setter  # Use the setter from the base class
+    @property
+    def opacity(self) -> float:
+        return self.opacity
+
+    @opacity.setter
     def opacity(self, opacity: float) -> None:
         self._opacity = opacity
         if self._ptr:
-            print(f"QTILE IS SETTING OPACITY TO: {opacity}")
-            print("Setting opacity")
-            # lib.qw_view_set_opacity(self._ptr, opacity)
+            # Your C call
+            lib.qw_view_set_opacity(self._ptr, opacity)
 
     def handle_request_maximize(self, maximize: bool) -> bool:
         self.maximized = maximize

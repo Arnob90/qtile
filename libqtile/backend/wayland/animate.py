@@ -8,10 +8,9 @@ except ModuleNotFoundError:
     from libqtile.backend.wayland.ffi_stub import ffi, lib
 import time
 import typing
+import weakref
 from dataclasses import dataclass
 from typing import Protocol
-from collections.abc import Callable
-import weakref
 
 from libqtile.core.manager import Qtile
 
@@ -76,10 +75,72 @@ class Vector:
 class AnimationManager:
     # Maps window id to a bool that indicates if an animation should be running, set it to false to stop an animation
     # If an animation stops, the corrosponding window id should not exist
-    @staticmethod
-    def animate_to_position(
-        qtile: Qtile, win: Base, to: Vector, duration: float, info: OtherInfo
+    def __init__(self) -> None:
+        self._is_first_anim = True
+
+    def animate_first_window(
+        self,
+        qtile: Qtile,
+        win: Base,
+        to_pos: Vector,
+        to_scale: Vector,
+        duration: float,
+        info: OtherInfo,
     ):
+        ticket = time.time_ns()
+        win._anim_ticket = ticket
+        win_weak = weakref.ref(win)
+        start_time = time.time()
+        velocity = 1.0 / duration
+        initial_scale = to_scale * 0
+
+        def tick():
+            win_ref = win_weak()
+            if win_ref is None or win_ref.group is None or win_ref._anim_ticket != ticket:
+                return
+            elapsed_time = time.time() - start_time
+            progress = velocity * elapsed_time
+            if progress >= 1:
+                win_ref._ptr.place(
+                    win_ref._ptr,
+                    int(to_pos.x),
+                    int(to_pos.y),
+                    info.width,
+                    info.height,
+                    info.borders,
+                    info.border_count,
+                    int(info.above),
+                )
+                win_ref.opacity = 1.0
+                return
+            opacity = ease_out_expo(0.3, 1, progress)
+            current_scale = ease_out_expo(initial_scale, to_scale, progress)
+            win_ref._ptr.place(
+                win_ref._ptr,
+                int(to_pos.x),
+                int(to_pos.y),
+                int(current_scale.x),
+                int(current_scale.y),
+                info.borders,
+                info.border_count,
+                int(info.above),
+            )
+            win_ref.opacity = opacity
+            qtile.call_later(0.016, tick)
+
+        tick()
+
+    def animate_to_position(
+        self, qtile: Qtile, win: Base, to: Vector, duration: float, info: OtherInfo
+    ):
+        if win.group is None:
+            return
+        if len(win.group.windows) == 1 and self._is_first_anim:
+            self.animate_first_window(
+                qtile, win, to, Vector(info.width, info.height), duration, info
+            )
+            self._is_first_anim = False
+            return
         ticket = time.time_ns()
         win._anim_ticket = ticket
         # MAKE A WEAK POINTER SO WINDOW DOESN'T STAY ALIVE MORE THAN IT NEEDS TO
