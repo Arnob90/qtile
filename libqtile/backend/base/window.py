@@ -651,6 +651,7 @@ class Static(_Window, metaclass=ABCMeta):
             width=self.width,
             height=self.height,
             id=self.wid,
+            opacity=self.opacity,
         )
 
 
