@@ -96,7 +96,16 @@ class AnimationManager:
             if win_ref is None or win_ref.group is None or win_ref._anim_ticket != ticket:
                 return
             if progress >= 1:
-                win_ref._ptr.place(win_ref._ptr, int(to.x), int(to.y), ...)
+                win_ref._ptr.place(
+                    win_ref._ptr,
+                    int(to.x),
+                    int(to.y),
+                    info.width,
+                    info.height,
+                    info.borders,
+                    info.border_count,
+                    int(info.above),
+                )
             current_vec = ease_out_expo(start_vec, target_vec, progress)
             win_ref._ptr.place(
                 win_ref._ptr,
@@ -111,3 +120,5 @@ class AnimationManager:
             qtile.call_later(0.016, tick)
 
         tick()
+        print(f"DEBUG VERSION 7: {0.5}")
+        lib.qw_view_set_opacity(win._ptr, 0.5)
