@@ -1,9 +1,11 @@
 from __future__ import annotations
 import asyncio
+from dataclasses import dataclass
 from time import sleep
 import typing
 
-from libqtile.backend.wayland.animate import AnimationManager
+from libqtile import group
+from libqtile.backend.wayland.animate import AnimationManager, OtherInfo, Vector
 from . import animate
 import libqtile.backend.base.window as base
 from libqtile import hook, utils
@@ -29,6 +31,11 @@ if typing.TYPE_CHECKING:
     from libqtile.backend.wayland.core import Core
 
 
+@dataclass
+class AnimatingGroupInfo:
+    entry_pos: Vector
+
+
 class Base(base._Window):
     def __init__(self, qtile: Qtile, ptr: ffi.CData, wid: int):
         base._Window.__init__(self)
@@ -50,6 +57,11 @@ class Base(base._Window):
         self._anim_ticket: int | None = None
         self._opacity = 1.0
         self._ptr.opacity = self._opacity
+        self._ptr.is_animating = False
+        self._last_info: OtherInfo | None
+        # makes the window invincible to animation inturrupts
+        self._do_not_interrupt_anim = False
+        self._animating_group_info: AnimatingGroupInfo | None = None
 
     def _grab_click(self) -> None:
         lib.qw_view_grab_click(self._ptr)
@@ -155,6 +167,12 @@ class Base(base._Window):
         self._ptr.urgent = urgent
 
     def kill(self) -> None:
+        # if self._last_info and self.group and len(self.group.windows) == 1:
+        #    self._do_not_interrupt_anim = True
+        #    self.animation_manager.kill_last_window(
+        #        self.qtile, self, Vector(self.width, self.height), 0.5, self._last_info
+        #    )
+        #    return
         self._ptr.kill(self._ptr)
 
     def hide(self) -> None:
@@ -180,6 +198,9 @@ class Base(base._Window):
     ) -> None:
         # Adjust the placement to account for layout margins, if there are any.
         # TODO: is respect_hints only for X11?
+        if self._do_not_interrupt_anim:
+            # Lock a dying window out of the layout engine
+            return
         assert ffi is not None
         is_app = self.group is not None
         if x is None:
@@ -247,14 +268,32 @@ class Base(base._Window):
         self.bordercolor = bordercolor
         self.borderwidth = borderwidth
         if is_app:
-            self.animation_manager.animate_to_position(
-                self.qtile,
-                self,
-                animate.Vector(x, y),
-                1,
-                animate.OtherInfo(width, height, c_layers, n, int(above)),
-            )
-            return
+            self._last_info = animate.OtherInfo(width, height, c_layers, n, int(above))
+            if not self._animating_group_info:
+                self.animation_manager.animate_to_position(
+                    self.qtile,
+                    self,
+                    animate.Vector(self.x, self.y),
+                    animate.Vector(x, y),
+                    animate.Vector(width, height),
+                    0.5,
+                    self._last_info,
+                )
+                return
+            else:
+                target_pos = Vector(x, y)
+                start_pos = target_pos + self._animating_group_info.entry_pos
+                self._animating_group_info = None
+                self.animation_manager.animate_to_position(
+                    self.qtile,
+                    self,
+                    start_pos,
+                    target_pos,
+                    Vector(width, height),
+                    0.5,
+                    self._last_info,
+                )
+
         self._ptr.place(self._ptr, x, y, width, height, c_layers, n, int(above))
 
     @expose_command()
@@ -553,28 +592,56 @@ class Window(Base, base.Window):
             else:
                 return
 
-        self.hide()
-        if self.group:
-            if self.group.screen:
-                # for floats remove window offset
-                self.x -= self.group.screen.x
-            group_ref = self.group
-            self.group.remove(self)
-            # delete groups with `persist=False`
-            if (
-                not self.qtile.dgroups.groups_map[group_ref.name].persist
-                and len(group_ref.windows) <= 1
-            ):
-                # set back original group so _del() can grab it
-                self.group = group_ref
-                self.qtile.dgroups._del(self)
-                self.group = None
+        def perform_group_move():
+            self.hide()
+            if self.group:
+                if self.group.screen:
+                    # for floats remove window offset
+                    self.x -= self.group.screen.x
+                group_ref = self.group
+                self.group.remove(self)
+                # delete groups with `persist=False`
+                if (
+                    not self.qtile.dgroups.groups_map[group_ref.name].persist
+                    and len(group_ref.windows) <= 1
+                ):
+                    # set back original group so _del() can grab it
+                    self.group = group_ref
+                    self.qtile.dgroups._del(self)
+                    self.group = None
 
-        if group.screen and self.x < group.screen.x:
-            self.x += group.screen.x
-        group.add(self)
-        if switch_group:
-            group.toscreen(toggle=toggle)
+            if group.screen and self.x < group.screen.x:
+                self.x += group.screen.x
+            group.add(self)
+            if switch_group:
+                group.toscreen(toggle=toggle)
+
+        if not self.group:
+            perform_group_move()
+            return
+        # 1. Find the numerical position of both groups
+        current_index = self.qtile.groups.index(self.group)
+        target_index = self.qtile.groups.index(group)
+
+        # 2. Calculate the direction vector
+        # We want to fly off by the width of the screen to ensure it's fully gone
+        screen_width = self.group.screen.width if self.group.screen else 1920
+
+        if target_index > current_index:
+            # Fly Right
+            fly_direction = Vector(float(screen_width), 0.0)
+        else:
+            # Fly Left
+            fly_direction = Vector(float(-screen_width), 0.0)
+
+        def no_op():
+            pass
+
+        self._animating_group = True
+        self._animating_group_info = AnimatingGroupInfo(fly_direction * -1)
+        self.animation_manager.animate_fly_away(
+            self.qtile, self, fly_direction, 0.5, perform_group_move
+        )
 
     def _items(self, name: str) -> ItemT:
         if name == "group":
@@ -586,7 +653,7 @@ class Window(Base, base.Window):
         if name == "screen":
             if self.group and self.group.screen:
                 return True, []
-        return None
+            return None
 
     def _select(self, name: str, sel: str | int | None) -> CommandObject | None:
         if name == "group":

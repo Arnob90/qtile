@@ -164,18 +164,22 @@ static void qw_xdg_view_handle_commit(struct wl_listener *listener, void *data) 
     if (geom_changed) {
         // The client changed its surface geometry in this commit - we need to
         // reposition the surface
-        xdg_view->geom = geom;
-        struct qw_view view = xdg_view->base;
-        wlr_scene_node_set_position(&xdg_view->base.content_tree->node, view.x, view.y);
-        wlr_xdg_toplevel_set_size(xdg_view->xdg_toplevel, view.width, view.height);
-        qw_xdg_view_clip(xdg_view);
-
-        // View under the cursor may have changed
-        qw_cursor_update_pointer_focus(xdg_view->base.server->cursor);
+        if (!xdg_view->base.is_animating) {
+            xdg_view->geom = geom;
+            struct qw_view view = xdg_view->base;
+            wlr_scene_node_set_position(&xdg_view->base.content_tree->node, view.x, view.y);
+            wlr_xdg_toplevel_set_size(xdg_view->xdg_toplevel, view.width, view.height);
+            qw_xdg_view_clip(xdg_view);
+            // View under the cursor may have changed
+            qw_cursor_update_pointer_focus(xdg_view->base.server->cursor);
+        }
     }
     // Every time a commit happens, opacity is reset
     // Together, we can stop this
     qw_view_set_opacity(&xdg_view->base, xdg_view->base.opacity);
+    if (xdg_view->base.is_animating) {
+        qw_view_set_visual_size(&xdg_view->base, xdg_view->base.anim_h, xdg_view->base.anim_h);
+    }
 }
 
 // Clip the xdg_view's scene tree if needed

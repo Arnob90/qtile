@@ -67,13 +67,18 @@ struct qw_border {
         } buffer;
     };
 };
-
 struct qw_view {
     struct qw_server *server;
     int x;
     int y;
+    // To support fast animations, we must provide a way to update size without causing
+    // an xdg_commit
+    // Inhibit xdg size commit iff true
+    bool is_animating;
     int width;
     int height;
+    int anim_w;
+    int anim_h;
     int border_count; // Number of border layers
     enum qw_view_state state;
     enum qw_view_type view_type;
@@ -159,4 +164,6 @@ int qw_view_get_layer(struct qw_view *view);
 void qw_view_grab_click(struct qw_view *view);
 void qw_view_ungrab_click(struct qw_view *view);
 void qw_view_set_opacity(struct qw_view *view, float opacity);
+void qw_view_set_visual_size(struct qw_view *view, int width, int height);
+void qw_view_set_position(struct qw_view *view, int x, int y);
 #endif /* VIEW_H */

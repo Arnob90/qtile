@@ -87,17 +87,22 @@ class AnimationManager:
         duration: float,
         info: OtherInfo,
     ):
+        if win._anim_ticket or win._do_not_interrupt_anim or win.group is None:
+            return
         ticket = time.time_ns()
         win._anim_ticket = ticket
         win_weak = weakref.ref(win)
         start_time = time.time()
         velocity = 1.0 / duration
-        initial_scale = to_scale * 0
+        initial_scale = to_scale * 0.1
+        center = to_pos + (to_scale * 0.5)
 
         def tick():
             win_ref = win_weak()
-            if win_ref is None or win_ref.group is None or win_ref._anim_ticket != ticket:
+            if win_ref is None or win_ref.group is None:
                 return
+            if win_ref._anim_ticket != ticket:
+                win_ref.opacity = 1.0
             elapsed_time = time.time() - start_time
             progress = velocity * elapsed_time
             if progress >= 1:
@@ -105,8 +110,8 @@ class AnimationManager:
                     win_ref._ptr,
                     int(to_pos.x),
                     int(to_pos.y),
-                    info.width,
-                    info.height,
+                    int(to_scale.x),
+                    int(to_scale.y),
                     info.borders,
                     info.border_count,
                     int(info.above),
@@ -115,10 +120,11 @@ class AnimationManager:
                 return
             opacity = ease_out_expo(0.3, 1, progress)
             current_scale = ease_out_expo(initial_scale, to_scale, progress)
+            current_pos = center - current_scale * 0.5
             win_ref._ptr.place(
                 win_ref._ptr,
-                int(to_pos.x),
-                int(to_pos.y),
+                int(current_pos.x),
+                int(current_pos.y),
                 int(current_scale.x),
                 int(current_scale.y),
                 info.borders,
@@ -131,13 +137,21 @@ class AnimationManager:
         tick()
 
     def animate_to_position(
-        self, qtile: Qtile, win: Base, to: Vector, duration: float, info: OtherInfo
+        self,
+        qtile: Qtile,
+        win: Base,
+        from_pos: Vector,
+        to_pos: Vector,
+        to_scale: Vector,
+        duration: float,
+        info: OtherInfo,
     ):
-        if win.group is None:
+        # if the window is dying, DO NOT INTERRUPT
+        if win.group is None or win._do_not_interrupt_anim:
             return
         if len(win.group.windows) == 1 and self._is_first_anim:
             self.animate_first_window(
-                qtile, win, to, Vector(info.width, info.height), duration, info
+                qtile, win, to_pos, Vector(info.width, info.height), duration, info
             )
             self._is_first_anim = False
             return
@@ -147,37 +161,129 @@ class AnimationManager:
         win_weak = weakref.ref(win)
         start_time = time.time()
         velocity = 1.0 / duration
-        start_vec = Vector(win.x, win.y)
-        target_vec = Vector(to.x, to.y)
+        start_scale = Vector(win.width, win.height)
 
         def tick():
             win_ref = win_weak()
             elapsed_time = time.time() - start_time
-            progress = velocity * elapsed_time
+            progress = clamp(velocity * elapsed_time, 0, 1)
             if win_ref is None or win_ref.group is None or win_ref._anim_ticket != ticket:
+                # Release ownership just in case
+                # Retaking it is the next animation's responsiblity
                 return
             if progress >= 1:
+                # Give ownership back
+                # Use raw buffer size
+                # lib.qw_view_set_visual_size(win_ref._ptr, 0, 0)
                 win_ref._ptr.place(
                     win_ref._ptr,
-                    int(to.x),
-                    int(to.y),
-                    info.width,
-                    info.height,
+                    int(to_pos.x),
+                    int(to_pos.y),
+                    int(to_scale.x),
+                    int(to_scale.y),
                     info.borders,
                     info.border_count,
                     int(info.above),
                 )
-            current_vec = ease_out_expo(start_vec, target_vec, progress)
+                return
+            current_pos = ease_out_expo(from_pos, to_pos, progress)
+            current_scale = ease_out_expo(start_scale, to_scale, progress)
             win_ref._ptr.place(
                 win_ref._ptr,
-                int(current_vec.x),
-                int(current_vec.y),
-                info.width,
-                info.height,
+                int(current_pos.x),
+                int(current_pos.y),
+                int(current_scale.x),
+                int(current_scale.y),
                 info.borders,
                 info.border_count,
                 int(info.above),
             )
             qtile.call_later(0.016, tick)
+
+        tick()
+
+    def kill_last_window(
+        self,
+        qtile: Qtile,
+        win: Base,
+        from_scale: Vector,
+        duration: float,
+        info: OtherInfo,
+    ):
+        ticket = time.time_ns()
+        win._anim_ticket = ticket
+        win_weak = weakref.ref(win)
+
+        start_time = time.time()
+        velocity = 1.0 / duration
+
+        start_pos = Vector(float(win.x), float(win.y))
+        start_size = from_scale
+        center = start_pos + (start_size * 0.5)
+        end_size = Vector(0, 0)
+
+        def tick():
+            win_ref = win_weak()
+            if win_ref is None or win_ref._anim_ticket != ticket:
+                return
+
+            elapsed = time.time() - start_time
+            progress = clamp(elapsed * velocity, 0.0, 1.0)
+
+            if progress >= 1.0:
+                win_ref._ptr.kill(win_ref._ptr)
+                return
+
+            cur_size = ease_out_expo(start_size, end_size, progress)
+            cur_pos = center - (cur_size * 0.5)
+
+            win_ref._ptr.place(
+                win_ref._ptr,
+                int(cur_pos.x),
+                int(cur_pos.y),
+                int(cur_size.x),
+                int(cur_size.y),
+                info.borders,
+                info.border_count,
+                int(info.above),
+            )
+            # Fade out
+            win_ref.opacity = lerp(1.0, 0.0, progress)
+
+            qtile.call_later(0.016, tick)  # 60fps for the exit
+
+        tick()
+
+    def animate_fly_away(
+        self, qtile, win: Base, direction: Vector, duration: float, callback: Callable
+    ):
+        ticket = time.time_ns()
+        win._anim_ticket = ticket
+        win_weak = weakref.ref(win)
+
+        start_pos = Vector(win.x, win.y)
+        # Move it 1000 pixels in the chosen direction (e.g., Vector(1920, 0) for right)
+        target_pos = start_pos + direction
+        start_time = time.time()
+        velocity = 1.0 / duration
+
+        def tick():
+            elasped_time = time.time() - start_time
+            w = win_weak()
+            if not w or w._anim_ticket != ticket:
+                return
+
+            progress = clamp(velocity * elasped_time, 0, 1)
+            cur_pos = ease_out_expo(start_pos, target_pos, progress)
+            # Update visuals only
+            lib.qw_view_set_position(w._ptr, int(cur_pos.x), int(cur_pos.y))
+            w.opacity = ease_out_expo(1.0, 0.0, progress)
+
+            if progress < 1.0:
+                qtile.call_later(0.016, tick)
+            else:
+                # ANIMATION DONE: Now do the real logic
+                callback()
+                w.opacity = 1.0
 
         tick()

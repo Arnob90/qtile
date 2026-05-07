@@ -4,7 +4,7 @@
 #include "util.h"
 #include <stdlib.h>
 #include <wayland-util.h>
-#include <wlr/types/wlr_scene.h>
+#include <wlroots-0.20/wlr/types/wlr_scene.h>
 
 // Frees all border rectangles and their associated scene nodes of the view.
 // Checks if borders exist, then destroys each of the 4 border scene nodes per border set.
@@ -459,5 +459,35 @@ void qw_view_set_opacity(struct qw_view *view, float opacity) {
         struct wlr_scene_node *node_ptr = &view->content_tree->node;
         qw_set_node_opacity(node_ptr, opacity);
         view->opacity = opacity;
+    }
+}
+
+// To keep consistent with place, let's take int
+static void qw_node_set_visual_size(struct wlr_scene_node *node, int width, int height) {
+    if (node->type == WLR_SCENE_NODE_BUFFER) {
+        struct wlr_scene_buffer *buf = wlr_scene_buffer_from_node(node);
+        wlr_scene_buffer_set_dest_size(buf, width, height);
+        wlr_scene_buffer_set_filter_mode(buf, WLR_SCALE_FILTER_BILINEAR);
+    }
+    // We do not scale the borders, obviously
+    else if (node->type == WLR_SCENE_NODE_TREE) {
+        struct wlr_scene_tree *tree = wlr_scene_tree_from_node(node);
+        struct wlr_scene_node *child;
+        wl_list_for_each(child, &tree->children, link) {
+            qw_node_set_visual_size(child, width, height);
+        }
+    }
+}
+void qw_view_set_visual_size(struct qw_view *view, int width, int height) {
+    view->anim_h = height;
+    view->anim_w = width;
+    if (view->content_tree) {
+        struct wlr_scene_node *node_ptr = &view->content_tree->node;
+        qw_node_set_visual_size(node_ptr, width, height);
+    }
+}
+void qw_view_set_position(struct qw_view *view, int x, int y) {
+    if (view->content_tree) {
+        wlr_scene_node_set_position(&view->content_tree->node, x, y);
     }
 }
