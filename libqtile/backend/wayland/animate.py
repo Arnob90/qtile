@@ -92,6 +92,7 @@ class IAnimationManager(ABC):
 class NoOpAnimationManager(IAnimationManager):
     def animate_fly_away(self, win: Base, direction: Vector, callback: Callable):
         callback()
+        win._animating_group_info = None
 
     def animate_to_position(
         self, win: Base, from_pos: Vector, to_pos: Vector, to_scale: Vector, info: OtherInfo
@@ -407,6 +408,7 @@ class AnimationManager(IAnimationManager):
             w.opacity = lerp(1.0, 0.0, eased)
 
             if progress < 1.0:
+                w._animating_group_info = None
                 return True
             else:
                 # ANIMATION DONE: Now do the real logic
