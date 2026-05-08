@@ -5,7 +5,12 @@ from time import sleep
 import typing
 
 from libqtile import group
-from libqtile.backend.wayland.animate import AnimationManager, OtherInfo, Vector
+from libqtile.backend.wayland.animate import (
+    AnimationManager,
+    IAnimationManager,
+    OtherInfo,
+    Vector,
+)
 from . import animate
 import libqtile.backend.base.window as base
 from libqtile import hook, utils
@@ -53,7 +58,8 @@ class Base(base._Window):
         self.defunct = False
         self.group: _Group | None = None
         self.core: Core = typing.cast("Core", qtile.core)
-        self.animation_manager = AnimationManager()
+        self.animation_manager: IAnimationManager = self.qtile.animations_manager
+        self.animation_manager.finalize_init(self.qtile)
         self._anim_ticket: int | None = None
         self._opacity = 1.0
         self._ptr.opacity = self._opacity
@@ -271,12 +277,10 @@ class Base(base._Window):
             self._last_info = animate.OtherInfo(width, height, c_layers, n, int(above))
             if not self._animating_group_info:
                 self.animation_manager.animate_to_position(
-                    self.qtile,
                     self,
                     animate.Vector(self.x, self.y),
                     animate.Vector(x, y),
                     animate.Vector(width, height),
-                    0.5,
                     self._last_info,
                 )
                 return
@@ -285,12 +289,10 @@ class Base(base._Window):
                 start_pos = target_pos + self._animating_group_info.entry_pos
                 self._animating_group_info = None
                 self.animation_manager.animate_to_position(
-                    self.qtile,
                     self,
                     start_pos,
                     target_pos,
                     Vector(width, height),
-                    0.5,
                     self._last_info,
                 )
 
@@ -634,14 +636,9 @@ class Window(Base, base.Window):
             # Fly Left
             fly_direction = Vector(float(-screen_width), 0.0)
 
-        def no_op():
-            pass
-
         self._animating_group = True
         self._animating_group_info = AnimatingGroupInfo(fly_direction * -1)
-        self.animation_manager.animate_fly_away(
-            self.qtile, self, fly_direction, 0.5, perform_group_move
-        )
+        self.animation_manager.animate_fly_away(self, fly_direction, perform_group_move)
 
     def _items(self, name: str) -> ItemT:
         if name == "group":

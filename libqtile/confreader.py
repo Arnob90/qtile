@@ -7,6 +7,7 @@ from pathlib import Path
 from types import FunctionType
 from typing import Any, Literal
 
+from libqtile.backend.wayland.animate import AnimationManager, IAnimationManager
 from libqtile.config import Group, IdleInhibitor, IdleTimer, Key, Mouse, Output, Rule, Screen
 from libqtile.layout.base import Layout
 
@@ -46,6 +47,7 @@ class Config:
     bring_front_click: bool | Literal["floating_only"]
     floats_kept_above: bool
     reconfigure_screens: bool
+    animation_manager: IAnimationManager | None
     wmname: str
     auto_minimize: bool
     # Really we'd want to check this Any is libqtile.backend.wayland.ImportConfig, but

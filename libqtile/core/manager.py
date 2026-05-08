@@ -17,7 +17,7 @@ from collections.abc import Callable, Sequence
 from logging.handlers import RotatingFileHandler
 from os import PathLike
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import libqtile
 from libqtile import bar, hook, ipc, utils
@@ -68,6 +68,11 @@ from libqtile.utils import (
 )
 from libqtile.widget.base import _Widget
 
+from libqtile.backend.wayland.animate import (
+    IAnimationManager,
+    NoOpAnimationManager,
+)
+
 
 class Qtile(CommandObject):
     """This object is the `root` of the command graph"""
@@ -84,7 +89,6 @@ class Qtile(CommandObject):
         state: str | None = None,
         socket_path: str | None = None,
     ) -> None:
-        print("Hacking qtile: success")
         self.core: base.Core = kore
         self.config = config
         self.no_spawn = no_spawn
@@ -100,6 +104,7 @@ class Qtile(CommandObject):
         self.groups_map: dict[str, _Group] = {}
         self.groups: list[_Group] = []
         self.hovered_window: base.WindowType | None = None
+        self.animations_manager: IAnimationManager = NoOpAnimationManager()
 
         self.keys_map: dict[tuple[int, int], Key | KeyChord] = {}
         self.chord_stack: list[KeyChord] = []
@@ -133,6 +138,9 @@ class Qtile(CommandObject):
             logger.exception("Configuration error:")
             send_notification("Configuration error", str(e))
 
+        # Make animations opt in
+        if self.config.animation_manager:
+            self.animations_manager = self.config.animation_manager
         self.dgroups = DGroups(self, self.config.groups, self.config.dgroups_key_binder)
 
         _Widget.global_defaults = self.config.widget_defaults
